@@ -243,10 +243,17 @@ module RubyXL
           ##end row styles##
         end
 
+        last_known_index = nil
         c_row = row.search('./xmlns:c')
-        c_row.each do |value|
+        c_row.each_with_index do |value, index|
           value_attributes= value.attributes
-          cell_index = Parser.convert_to_index(value_attributes['r'].content)
+          if value_attributes['r']
+            cell_index = Parser.convert_to_index(value_attributes['r'].content)
+            last_known_index = cell_index
+          else
+            cell_index = last_known_index
+            cell_index[1] = index
+          end
           style_index = nil
 
           data_type = value_attributes['t'].content if value_attributes['t']
@@ -435,7 +442,7 @@ module RubyXL
 
     #sheet_names, dimensions
     def Parser.create_matrix(wb,i, files)
-      sheet_names = files['app'].css('TitlesOfParts vt|vector vt|lpstr').children
+      sheet_names = files['workbook'].css('sheet').map { |sheet| sheet['name'] }
       sheet = Worksheet.new(wb,sheet_names[i].to_s,[])
 
       dimensions = files[i+1].css('dimension').attribute('ref').to_s
