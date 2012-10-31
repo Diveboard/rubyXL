@@ -91,6 +91,8 @@ module RubyXL
         Parser.fill_worksheet(wb,i,files,wb.shared_strings)
       end
 
+      wb.worksheets.compact!
+
       return wb
     end
 
@@ -168,7 +170,10 @@ module RubyXL
     # files is the hash which includes information for each worksheet
     # shared_strings has group of indexed strings which the cells reference
     def Parser.fill_worksheet(wb,i,files,shared_strings)
-      wb.worksheets[i] = Parser.create_matrix(wb, i, files)
+      worksheet = Parser.create_matrix(wb, i, files)
+      return unless worksheet
+
+      wb.worksheets[i] = worksheet
       j = i+1
 
       namespaces = files[j].root.namespaces()
@@ -304,6 +309,7 @@ module RubyXL
             style_index = 0
           end
 
+          wb.worksheets[i].sheet_data[cell_index[0]] ||= []
           wb.worksheets[i].sheet_data[cell_index[0]][cell_index[1]] =
             Cell.new(wb.worksheets[i],cell_index[0],cell_index[1],cell_data,cell_formula,
               data_type,style_index,cell_formula_attr)
@@ -335,8 +341,12 @@ module RubyXL
 
       files = Hash.new
 
-      files['app'] = Nokogiri::XML.parse(File.open(File.join(dir_path,'docProps','app.xml'),'r'))
-      files['core'] = Nokogiri::XML.parse(File.open(File.join(dir_path,'docProps','core.xml'),'r'))
+      if File.exists?(File.join(dir_path,'docProps','app.xml'))
+        files['app'] = Nokogiri::XML.parse(File.open(File.join(dir_path,'docProps','app.xml'),'r'))
+      end
+      if File.exists?(File.join(dir_path,'docProps','app.xml'))
+        files['core'] = Nokogiri::XML.parse(File.open(File.join(dir_path,'docProps','core.xml'),'r'))
+      end
 
       files['workbook'] = Nokogiri::XML.parse(File.open(File.join(dir_path,'xl','workbook.xml'),'r'))
 
@@ -349,6 +359,7 @@ module RubyXL
         if File.directory?(File.join(dir_path,'xl','externalLinks'))
           files['externalLinks'] = {}
           ext_links_path = File.join(dir_path,'xl','externalLinks')
+          FileUtils.mkdir_p(ext_links_path)
           files['externalLinks']['rels'] = []
           dir = Dir.new(ext_links_path).entries.reject {|f| [".", "..", ".DS_Store", "_rels"].include? f}
 
@@ -367,7 +378,7 @@ module RubyXL
         if File.directory?(File.join(dir_path,'xl','drawings'))
           files['drawings'] = {}
           drawings_path = File.join(dir_path,'xl','drawings','_rels')
-
+          FileUtils.mkdir_p(drawings_path)
           dir = Dir.new(drawings_path).entries.reject {|f| [".", "..", ".DS_Store"].include? f}
           dir.each_with_index do |draw,i|
             files['drawings'][i+1] = File.read(File.join(drawings_path,draw))
@@ -377,7 +388,7 @@ module RubyXL
         if File.directory?(File.join(dir_path,'xl','printerSettings'))
           files['printerSettings'] = {}
           printer_path = File.join(dir_path,'xl','printerSettings')
-
+          FileUtils.mkdir_p(printer_path)
           dir = Dir.new(printer_path).entries.reject {|f| [".","..",".DS_Store"].include? f}
 
           dir.each_with_index do |print, i|
@@ -388,7 +399,7 @@ module RubyXL
         if File.directory?(File.join(dir_path,"xl",'worksheets','_rels'))
           files['worksheetRels'] = {}
           worksheet_rels_path = File.join(dir_path,'xl','worksheets','_rels')
-
+          FileUtils.mkdir_p(worksheet_rels_path)
           dir = Dir.new(worksheet_rels_path).entries.reject {|f| [".","..",".DS_Store"].include? f}
           dir.each_with_index do |rel, i|
             files['worksheetRels'][i+1] = File.read(File.join(worksheet_rels_path,rel))
@@ -422,14 +433,18 @@ module RubyXL
       wb = Workbook.new([nil],file_path)
 
       unless @data_only
-        wb.creator = files['core'].css('dc|creator').children.to_s
-        wb.modifier = files['core'].css('cp|last_modified_by').children.to_s
-        wb.created_at = files['core'].css('dcterms|created').children.to_s
-        wb.modified_at = files['core'].css('dcterms|modified').children.to_s
+        if files['core']
+          wb.creator = files['core'].css('dc|creator').children.to_s
+          wb.modifier = files['core'].css('cp|last_modified_by').children.to_s
+          wb.created_at = files['core'].css('dcterms|created').children.to_s
+          wb.modified_at = files['core'].css('dcterms|modified').children.to_s
+        end
 
-        wb.company = files['app'].css('Company').children.to_s
-        wb.application = files['app'].css('Application').children.to_s
-        wb.appversion = files['app'].css('AppVersion').children.to_s
+        if files['app']
+          wb.company = files['app'].css('Company').children.to_s
+          wb.application = files['app'].css('Application').children.to_s
+          wb.appversion = files['app'].css('AppVersion').children.to_s
+        end
       end
 
       wb.shared_strings_XML = files['sharedString'].to_s
@@ -445,8 +460,8 @@ module RubyXL
       sheet_names = files['workbook'].css('sheet').map { |sheet| sheet['name'] }
       sheet = Worksheet.new(wb,sheet_names[i].to_s,[])
 
-      dimensions = files[i+1].css('dimension').attribute('ref').to_s
-      if(dimensions =~ /^([A-Z]+\d+:)?([A-Z]+\d+)$/)
+      dimensions = files[i+1].css('dimension')
+      if(dimensions.present? && dimensions.attribute('ref').to_s =~ /^([A-Z]+\d+:)?([A-Z]+\d+)$/)
         index = convert_to_index($2)
 
         rows = index[0]+1
@@ -455,7 +470,7 @@ module RubyXL
         #creates matrix filled with nils
         rows.times {sheet.sheet_data << Array.new(cols)}
       else
-        raise 'invalid file'
+        sheet.sheet_data << Array.new
       end
       sheet
     end
