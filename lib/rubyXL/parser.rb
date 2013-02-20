@@ -410,7 +410,9 @@ module RubyXL
           files['vbaProject'] = File.open(File.join(dir_path,"xl","vbaProject.bin"),'rb').read
         end
 
-        files['styles'] = Nokogiri::XML.parse(File.open(File.join(dir_path,'xl','styles.xml'),'r'))
+        if File.exist?(File.join(dir_path,'xl','styles.xml'))
+          files['styles'] = Nokogiri::XML.parse(File.open(File.join(dir_path,'xl','styles.xml'),'r'))
+        end
       end
 
       @num_sheets = files['workbook'].css('sheets').children.size
@@ -449,7 +451,9 @@ module RubyXL
 
       wb.shared_strings_XML = files['sharedString'].to_s
       wb.defined_names = files['workbook'].css('definedNames').to_s
-      wb.date1904 = files['workbook'].css('workbookPr').attribute('date1904').to_s == '1'
+      if files['styles']
+        wb.date1904 = files['workbook'].css('workbookPr').attribute('date1904').to_s == '1'
+      end
 
       wb.worksheets = Array.new(@num_sheets) #array of Worksheet objs
       wb
